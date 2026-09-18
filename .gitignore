@@ -1,0 +1,206 @@
+# =============================================================================
+# Sentinel Patrol — Root .gitignore
+# Stack: FastAPI (Python) + React/Vite (Node.js) + MySQL + ChromaDB + Ollama
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# SECRETS & ENVIRONMENT VARIABLES
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+.env.development
+# .env.example is intentionally NOT listed here — it should be committed
+*.secret
+secrets.json
+secrets.yaml
+secrets.toml
+
+
+# -----------------------------------------------------------------------------
+# PYTHON — Virtual Environments
+# -----------------------------------------------------------------------------
+venv/
+.venv/
+env/
+ENV/
+virtualenv/
+
+
+# -----------------------------------------------------------------------------
+# PYTHON — Bytecode & Cache
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+
+# -----------------------------------------------------------------------------
+# PYTHON — Package / Build Artifacts
+# -----------------------------------------------------------------------------
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+*.manifest
+*.spec
+MANIFEST
+
+
+# -----------------------------------------------------------------------------
+# PYTHON — Testing & Coverage
+# -----------------------------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+coverage/
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+test-results/
+*.test.db
+
+
+# -----------------------------------------------------------------------------
+# PYTHON — Type Checkers & Linters
+# -----------------------------------------------------------------------------
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyright/
+
+
+# -----------------------------------------------------------------------------
+# AI / RAG — ChromaDB Vector Store (generated persistent data)
+# Excluded: the entire chroma_db/ directory is auto-generated at runtime
+# from data already stored in MySQL. Delete and re-run to regenerate.
+# -----------------------------------------------------------------------------
+chroma_db/
+
+
+# -----------------------------------------------------------------------------
+# AI / RAG — Ollama (local LLM)
+# Ollama stores model weights outside the project by default (%USERPROFILE%\.ollama
+# on Windows). If any Ollama files were ever placed inside this directory, ignore them.
+# -----------------------------------------------------------------------------
+.ollama/
+ollama_models/
+
+
+# -----------------------------------------------------------------------------
+# NODE.JS — Dependencies
+# -----------------------------------------------------------------------------
+frontend/node_modules/
+node_modules/
+
+
+# -----------------------------------------------------------------------------
+# VITE / FRONTEND — Build Output
+# The frontend/dist/ folder is produced by `vite build` and must NOT be committed.
+# Serve the dev server in development; build only for production deployment.
+# -----------------------------------------------------------------------------
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+
+
+# -----------------------------------------------------------------------------
+# NODE.JS — Logs & Debug
+# -----------------------------------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+
+# -----------------------------------------------------------------------------
+# NODE.JS — Local / Runtime Files
+# -----------------------------------------------------------------------------
+*.local
+.cache/
+.parcel-cache/
+
+
+# -----------------------------------------------------------------------------
+# OS-GENERATED FILES
+# -----------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+
+
+# -----------------------------------------------------------------------------
+# IDE / EDITOR
+# -----------------------------------------------------------------------------
+# VS Code — keep extensions.json if present, ignore everything else
+.vscode/*
+!.vscode/extensions.json
+.vscode-test/
+
+# JetBrains (PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim / Neovim
+*.swp
+*.swo
+*.sw?
+
+# Emacs
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+
+# -----------------------------------------------------------------------------
+# MISCELLANEOUS
+# -----------------------------------------------------------------------------
+# Compressed / archive files unlikely to be source
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# SQLite databases (use MySQL in production; any local .db files are ephemeral)
+*.sqlite3
+*.db
+
+# Jupyter Notebooks checkpoints (if any notebooks are added later)
+.ipynb_checkpoints/

@@ -1,9 +1,12 @@
 fastapi
-uvicorn
-pymysql
+uvicorn[standard]
 sqlmodel
+pymysql
 python-dotenv
 pyjwt
 passlib[bcrypt]
+bcrypt
+python-multipart
 httpx
 chromadb
+pytest

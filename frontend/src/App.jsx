@@ -10,8 +10,9 @@ const MapView     = lazy(() => import('./components/MapView'))
 const CCTVGrid    = lazy(() => import('./components/CCTVGrid'))
 const AIAssistant = lazy(() => import('./components/AIAssistant'))
 const CasesPanel  = lazy(() => import('./components/CasesPanel'))
+const AdminPanel  = lazy(() => import('./components/AdminPanel'))
 
-const TABS = [
+const BASE_TABS = [
   { id: 'map',   label: 'GIS Map & Incidents', icon: Map },
   { id: 'cctv',  label: 'Station CCTV Feeds',  icon: Camera },
   { id: 'ai',    label: 'AI Assistant',         icon: Bot },
@@ -56,6 +57,10 @@ export default function App() {
   const seniorRanks = ['Superintendent of Police', 'Deputy Inspector General', 'Inspector General of Police', 'Additional Director General of Police', 'Director General of Police', 'Home Minister']
   const roleColor = seniorRanks.includes(user.role) ? '#a78bfa' : '#60a5fa'
 
+  const availableTabs = user?.is_admin
+    ? [...BASE_TABS, { id: 'admin', label: 'System Admin', icon: Shield }]
+    : BASE_TABS
+
   return (
     <div className="flex flex-col h-screen overflow-hidden"
          style={{ background: 'linear-gradient(180deg, #0a0f1e 0%, #0d1420 100%)' }}>
@@ -91,14 +96,14 @@ export default function App() {
           <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-500">
             <span>Command Dashboard</span>
             <ChevronRight size={12} />
-            <span className="text-slate-400">{TABS.find(t => t.id === activeTab)?.label}</span>
+            <span className="text-slate-400">{availableTabs.find(t => t.id === activeTab)?.label}</span>
           </div>
         </div>
 
         {/* Center – Tab navigation */}
         <nav className="flex items-center gap-1 p-1 rounded-xl"
              style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(51,65,85,0.4)' }}>
-          {TABS.map(tab => {
+          {availableTabs.map(tab => {
             const Icon    = tab.icon
             const active  = activeTab === tab.id
             return (
@@ -173,7 +178,7 @@ export default function App() {
           <span className="text-green-500">SYSTEM ONLINE</span>
         </span>
         <span>BADGE: {user.badge_number}</span>
-        <span>STATION: {user.station_id}</span>
+        <span>STATION: {user.station_id || 'N/A'}</span>
         <span className="ml-auto">
           {new Date().toLocaleString('en-IN', {
             weekday:'short', year:'numeric', month:'short',
@@ -189,6 +194,7 @@ export default function App() {
           {activeTab === 'cctv'  && <CCTVGrid />}
           {activeTab === 'ai'    && <AIAssistant />}
           {activeTab === 'cases' && <CasesPanel />}
+          {activeTab === 'admin' && <AdminPanel />}
         </Suspense>
       </main>
     </div>

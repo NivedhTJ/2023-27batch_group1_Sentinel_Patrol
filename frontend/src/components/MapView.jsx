@@ -234,7 +234,7 @@ function MapModeToggle({ mode, onChange }) {
   return (
     <div
       id="map-mode-toggle"
-      className="absolute top-3 left-3 z-[1000] flex rounded-xl overflow-hidden"
+      className="flex rounded-xl overflow-hidden"
       style={{
         background: 'rgba(10,15,30,0.88)',
         backdropFilter: 'blur(14px)',
@@ -480,17 +480,75 @@ function buildHotspots(incidents) {
   }))
 }
 
+// ── Tile Providers (HD alternatives with 0 blur & 0 API key) ──
+const TILE_PROVIDERS = {
+  cartoDark: {
+    id: 'cartoDark',
+    name: 'CARTO Dark Matter',
+    url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c', 'd'],
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 19
+  },
+  osm: {
+    id: 'osm',
+    name: 'OpenStreetMap (HD Street)',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c'],
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  },
+  satellite: {
+    id: 'satellite',
+    name: 'Esri Satellite Imagery',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
+    maxZoom: 18
+  }
+}
+
 // ── Map panel (extracted so hooks can live at top level) ──────
 function MapPanel({ incidents }) {
   const { officers, wsStatus, sendLocation } = usePatrolWebSocket('officer_101')
   const [mapMode, setMapMode] = useState('markers')  // 'markers' | 'heatmap'
+  const [tileKey, setTileKey] = useState('cartoDark') // default to fastly CARTO Dark Matter
   const hotspots = mapMode === 'heatmap' ? buildHotspots(incidents) : []
+  const activeTile = TILE_PROVIDERS[tileKey] || TILE_PROVIDERS.cartoDark
 
   return (
     <div
-      className="flex-1 rounded-2xl overflow-hidden relative"
+      className="flex-1 rounded-2xl overflow-hidden relative flex flex-col"
       style={{ boxShadow: '0 0 0 1px rgba(51,65,85,0.5), 0 24px 60px rgba(0,0,0,0.5)' }}
     >
+      {/* Top Bar for Mode & Tile Theme Selectors */}
+      <div className="absolute top-3 left-3 z-[1000] flex items-center gap-2">
+        <MapModeToggle mode={mapMode} onChange={setMapMode} />
+
+        {/* Tile Theme Switcher */}
+        <div
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white"
+          style={{
+            background: 'rgba(10,15,30,0.88)',
+            backdropFilter: 'blur(14px)',
+            border: '1px solid rgba(51,65,85,0.5)',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          }}
+        >
+          <Layers size={12} className="text-blue-400" />
+          <select
+            value={tileKey}
+            onChange={e => setTileKey(e.target.value)}
+            className="bg-transparent text-xs text-slate-200 outline-none cursor-pointer"
+          >
+            {Object.values(TILE_PROVIDERS).map(p => (
+              <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <MapContainer
         center={[10.8505, 76.2711]}
         zoom={7}
@@ -498,9 +556,11 @@ function MapPanel({ incidents }) {
         zoomControl={true}
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>'
-          maxZoom={19}
+          key={activeTile.id}
+          url={activeTile.url}
+          {...(activeTile.subdomains ? { subdomains: activeTile.subdomains } : {})}
+          attribution={activeTile.attribution}
+          maxZoom={activeTile.maxZoom}
         />
 
         {/* ── Mode-aware layer ── */}

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Briefcase, Plus, X, Search, Filter, RefreshCw, Folder,
   FileText, Shield, User as UserIcon, Clock, Paperclip,
-  CheckCircle2, AlertCircle, ChevronRight, Hash, Tag, Layers
+  CheckCircle2, AlertCircle, ChevronRight, Hash, Tag, Layers,
+  Upload, FileCode, Trash2, Eye, ShieldAlert, Check
 } from 'lucide-react'
 import api from '../api'
 
@@ -17,6 +18,14 @@ const EVIDENCE_TYPE_BADGES = {
   'Digital': { text: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', label: 'Digital' },
   'Testimonial': { text: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)', label: 'Testimonial' },
   'Document': { text: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)', label: 'Document' }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 export default function CasesPanel() {
@@ -43,6 +52,19 @@ export default function CasesPanel() {
   const [evidenceList, setEvidenceList] = useState([])
   const [fetchingEvidence, setFetchingEvidence] = useState(false)
   const [updatingCaseStatus, setUpdatingCaseStatus] = useState(false)
+
+  // Digital Evidence Files State
+  const [digitalEvidenceList, setDigitalEvidenceList] = useState([])
+  const [fetchingDigitalEvidence, setFetchingDigitalEvidence] = useState(false)
+  const [activeEvidenceTab, setActiveEvidenceTab] = useState('textual') // 'textual' | 'digital'
+
+  // Digital File Upload Form State
+  const [uploadFile, setUploadFile] = useState(null)
+  const [uploadDescription, setUploadDescription] = useState('')
+  const [isSensitiveFile, setIsSensitiveFile] = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const [uploadSuccess, setUploadSuccess] = useState('')
 
   // Add Evidence Form State
   const [newEvidence, setNewEvidence] = useState({
@@ -105,10 +127,71 @@ export default function CasesPanel() {
     }
   }, [])
 
+  // Fetch digital evidence files for selected case
+  const fetchDigitalEvidenceForCase = useCallback(async (caseId) => {
+    setFetchingDigitalEvidence(true)
+    try {
+      const res = await api.get(`/api/digital-evidence/case/${caseId}`)
+      setDigitalEvidenceList(res.data)
+    } catch (err) {
+      console.error('Failed to fetch digital evidence', err)
+    } finally {
+      setFetchingDigitalEvidence(false)
+    }
+  }, [])
+
   // Open Case Detail View
   const handleOpenCaseDetail = (caseItem) => {
     setSelectedCase(caseItem)
+    setUploadSuccess('')
+    setUploadError('')
+    setUploadFile(null)
+    setUploadDescription('')
+    setIsSensitiveFile(false)
     fetchEvidenceForCase(caseItem.id)
+    fetchDigitalEvidenceForCase(caseItem.id)
+  }
+
+  // Handle File Upload Submit
+  const handleFileUploadSubmit = async (e) => {
+    e.preventDefault()
+    if (!selectedCase || !uploadFile) return
+    setUploadError('')
+    setUploadSuccess('')
+    setUploadingFile(true)
+
+    try {
+      const formData = new FormData()
+      formData.append('case_id', selectedCase.id)
+      formData.append('description', uploadDescription)
+      formData.append('is_sensitive', isSensitiveFile)
+      formData.append('file', uploadFile)
+
+      const res = await api.post('/api/digital-evidence/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+
+      setUploadSuccess(`File uploaded & hashed successfully! SHA-256: ${res.data.hash_sha256}`)
+      setUploadFile(null)
+      setUploadDescription('')
+      setIsSensitiveFile(false)
+      await fetchDigitalEvidenceForCase(selectedCase.id)
+    } catch (err) {
+      setUploadError(err?.response?.data?.detail || 'Failed to upload evidence file.')
+    } finally {
+      setUploadingFile(false)
+    }
+  }
+
+  // Handle Delete Digital Evidence File
+  const handleDeleteDigitalEvidence = async (evidenceId) => {
+    if (!window.confirm('Are you sure you want to delete this digital evidence record?')) return
+    try {
+      await api.delete(`/api/digital-evidence/${evidenceId}`)
+      await fetchDigitalEvidenceForCase(selectedCase.id)
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Failed to delete digital evidence.')
+    }
   }
 
   // Submit New Case
@@ -597,116 +680,306 @@ export default function CasesPanel() {
 
               {/* Evidence Section */}
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <div className="flex items-center gap-2">
                     <Paperclip size={16} className="text-blue-400" />
-                    <h3 className="text-sm font-bold text-white">Evidence Records</h3>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-500/20 text-blue-400">
-                      {evidenceList.length}
-                    </span>
+                    <h3 className="text-sm font-bold text-white">Evidence Collection</h3>
+                  </div>
+
+                  {/* Sub-tabs for Textual vs Digital Files */}
+                  <div className="flex items-center gap-1 bg-slate-900/80 p-1 rounded-lg border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setActiveEvidenceTab('textual')}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all"
+                      style={{
+                        background: activeEvidenceTab === 'textual' ? 'rgba(59,130,246,0.25)' : 'transparent',
+                        color: activeEvidenceTab === 'textual' ? '#60a5fa' : '#64748b',
+                        border: activeEvidenceTab === 'textual' ? '1px solid rgba(59,130,246,0.4)' : '1px solid transparent'
+                      }}
+                    >
+                      <FileText size={12} />
+                      <span>Text Logs ({evidenceList.length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveEvidenceTab('digital')}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all"
+                      style={{
+                        background: activeEvidenceTab === 'digital' ? 'rgba(59,130,246,0.25)' : 'transparent',
+                        color: activeEvidenceTab === 'digital' ? '#60a5fa' : '#64748b',
+                        border: activeEvidenceTab === 'digital' ? '1px solid rgba(59,130,246,0.4)' : '1px solid transparent'
+                      }}
+                    >
+                      <Upload size={12} />
+                      <span>Digital Files ({digitalEvidenceList.length})</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Evidence List */}
-                <div className="space-y-2">
-                  {fetchingEvidence && (
-                    <div className="p-4 text-center text-xs text-slate-500">Loading evidence items...</div>
-                  )}
+                {/* ── TAB 1: TEXT LOGGED EVIDENCE ───────────────────────────── */}
+                {activeEvidenceTab === 'textual' && (
+                  <div className="space-y-4 animate-fade-in">
+                    <div className="space-y-2">
+                      {fetchingEvidence && (
+                        <div className="p-4 text-center text-xs text-slate-500">Loading evidence items...</div>
+                      )}
 
-                  {!fetchingEvidence && evidenceList.length === 0 && (
-                    <div className="glass rounded-xl p-4 text-center text-xs text-slate-500">
-                      No evidence logged for this case yet. Add the first record below.
+                      {!fetchingEvidence && evidenceList.length === 0 && (
+                        <div className="glass rounded-xl p-4 text-center text-xs text-slate-500">
+                          No textual evidence logged for this case yet. Add a record below.
+                        </div>
+                      )}
+
+                      {evidenceList.map(ev => {
+                        const badgeCfg = EVIDENCE_TYPE_BADGES[ev.evidence_type] || EVIDENCE_TYPE_BADGES['Physical']
+                        return (
+                          <div
+                            key={ev.id}
+                            className="glass rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 border border-slate-800"
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span
+                                  className="text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider"
+                                  style={{ color: badgeCfg.text, background: badgeCfg.bg }}
+                                >
+                                  {ev.evidence_type}
+                                </span>
+                                <span className="text-[10px] text-slate-500">
+                                  Collected {new Date(ev.collected_at || Date.now()).toLocaleString()}
+                                </span>
+                              </div>
+                              <p className="text-xs text-white">{ev.description}</p>
+                            </div>
+
+                            <div className="shrink-0 text-right text-[11px] text-slate-500">
+                              <span>Officer #{ev.collected_by}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                  )}
 
-                  {evidenceList.map(ev => {
-                    const badgeCfg = EVIDENCE_TYPE_BADGES[ev.evidence_type] || EVIDENCE_TYPE_BADGES['Physical']
-                    return (
-                      <div
-                        key={ev.id}
-                        className="glass rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 border border-slate-800"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span
-                              className="text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider"
-                              style={{ color: badgeCfg.text, background: badgeCfg.bg }}
+                    {/* Add Evidence Mini-Form */}
+                    <div className="glass rounded-xl p-4 bg-slate-900/60 border border-slate-800">
+                      <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+                        <Plus size={14} className="text-blue-400" /> Log Text Evidence Record
+                      </h4>
+
+                      <form onSubmit={handleAddEvidenceSubmit} className="space-y-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase">
+                            Evidence Description
+                          </label>
+                          <textarea
+                            required
+                            rows={2}
+                            placeholder="Detailed description of evidence item (e.g. fingerprint sample, recovered physical tool)..."
+                            value={newEvidence.description}
+                            onChange={e => setNewEvidence({ ...newEvidence, description: e.target.value })}
+                            className="w-full px-3 py-2 rounded-lg text-xs text-white placeholder-slate-600 outline-none resize-none"
+                            style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(51,65,85,0.7)' }}
+                          />
+                        </div>
+
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-3">
+                          <div className="w-full md:w-1/2">
+                            <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase">
+                              Evidence Type
+                            </label>
+                            <select
+                              value={newEvidence.evidence_type}
+                              onChange={e => setNewEvidence({ ...newEvidence, evidence_type: e.target.value })}
+                              className="w-full px-3 py-1.5 rounded-lg text-xs text-white outline-none"
+                              style={{ background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.7)' }}
                             >
-                              {ev.evidence_type}
+                              <option value="Physical">Physical</option>
+                              <option value="Digital">Digital</option>
+                              <option value="Testimonial">Testimonial</option>
+                              <option value="Document">Document</option>
+                            </select>
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={evidenceLoading}
+                            className="w-full md:w-auto px-5 py-2 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-50 self-end"
+                            style={{
+                              background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)',
+                              boxShadow: '0 4px 16px rgba(59,130,246,0.3)'
+                            }}
+                          >
+                            {evidenceLoading ? 'Submitting...' : 'Add Record'}
+                          </button>
+                        </div>
+
+                        {evidenceError && (
+                          <p className="text-xs text-red-400 mt-2">{evidenceError}</p>
+                        )}
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── TAB 2: DIGITAL FILES & SHA-256 UPLOAD ───────────────────── */}
+                {activeEvidenceTab === 'digital' && (
+                  <div className="space-y-4 animate-fade-in">
+                    {/* File Upload Box */}
+                    <div className="glass rounded-xl p-4 bg-slate-900/70 border border-blue-500/30">
+                      <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
+                        <Upload size={14} className="text-blue-400" /> Upload Digital Evidence File (SHA-256 Hashed)
+                      </h4>
+
+                      <form onSubmit={handleFileUploadSubmit} className="space-y-3">
+                        {/* File Selector */}
+                        <div className="p-3 rounded-xl border border-dashed border-slate-700 bg-slate-950/50 flex flex-col items-center justify-center text-center">
+                          <input
+                            type="file"
+                            id="digital-evidence-input"
+                            required
+                            onChange={e => setUploadFile(e.target.files[0] || null)}
+                            className="hidden"
+                          />
+                          <label
+                            htmlFor="digital-evidence-input"
+                            className="cursor-pointer flex flex-col items-center gap-1.5"
+                          >
+                            <Upload size={24} className="text-blue-400 animate-bounce" />
+                            <span className="text-xs font-semibold text-blue-400">
+                              {uploadFile ? uploadFile.name : 'Click to select evidence file'}
                             </span>
                             <span className="text-[10px] text-slate-500">
-                              Collected {new Date(ev.collected_at || Date.now()).toLocaleString()}
+                              {uploadFile
+                                ? `${formatBytes(uploadFile.size)} • ${uploadFile.type || 'Unknown Type'}`
+                                : 'Supports Photos, Videos, Audio, PDFs & Documents (Max 100 MB)'}
                             </span>
+                          </label>
+                        </div>
+
+                        {/* File Description */}
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase">
+                            File Notes / Description
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. CCTV clip showing suspect vehicle, crime scene photo..."
+                            value={uploadDescription}
+                            onChange={e => setUploadDescription(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg text-xs text-white placeholder-slate-600 outline-none"
+                            style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(51,65,85,0.7)' }}
+                          />
+                        </div>
+
+                        {/* Sensitive Checkbox & Submit */}
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                          <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                            <input
+                              type="checkbox"
+                              checked={isSensitiveFile}
+                              onChange={e => setIsSensitiveFile(e.target.checked)}
+                              className="rounded border-slate-700 bg-slate-900 text-blue-500 focus:ring-0"
+                            />
+                            <ShieldAlert size={14} className="text-amber-400" />
+                            <span>Mark as Sensitive / Restricted Access</span>
+                          </label>
+
+                          <button
+                            type="submit"
+                            disabled={uploadingFile || !uploadFile}
+                            className="w-full sm:w-auto px-5 py-2 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-50"
+                            style={{
+                              background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)',
+                              boxShadow: '0 4px 16px rgba(59,130,246,0.3)'
+                            }}
+                          >
+                            {uploadingFile ? 'Hashing & Uploading...' : 'Upload & Compute Hash'}
+                          </button>
+                        </div>
+
+                        {uploadError && (
+                          <div className="p-2.5 rounded-lg text-xs text-red-400 bg-red-500/10 border border-red-500/20 flex items-center gap-2">
+                            <AlertCircle size={14} className="shrink-0" />
+                            <span>{uploadError}</span>
                           </div>
-                          <p className="text-xs text-white">{ev.description}</p>
-                        </div>
+                        )}
 
-                        <div className="shrink-0 text-right text-[11px] text-slate-500">
-                          <span>Officer #{ev.collected_by}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Add Evidence Mini-Form */}
-                <div className="glass rounded-xl p-4 bg-slate-900/60 border border-slate-800">
-                  <h4 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
-                    <Plus size={14} className="text-blue-400" /> Log New Evidence
-                  </h4>
-
-                  <form onSubmit={handleAddEvidenceSubmit} className="space-y-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase">
-                        Evidence Description
-                      </label>
-                      <textarea
-                        required
-                        rows={2}
-                        placeholder="Detailed description of evidence item (e.g. CCTV video clip, fingerprint sample, witness statement)..."
-                        value={newEvidence.description}
-                        onChange={e => setNewEvidence({ ...newEvidence, description: e.target.value })}
-                        className="w-full px-3 py-2 rounded-lg text-xs text-white placeholder-slate-600 outline-none resize-none"
-                        style={{ background: 'rgba(15,23,42,0.9)', border: '1px solid rgba(51,65,85,0.7)' }}
-                      />
+                        {uploadSuccess && (
+                          <div className="p-2.5 rounded-lg text-xs text-green-400 bg-green-500/10 border border-green-500/20 flex items-center gap-2">
+                            <Check size={14} className="shrink-0" />
+                            <span className="font-mono text-[11px] break-all">{uploadSuccess}</span>
+                          </div>
+                        )}
+                      </form>
                     </div>
 
-                    <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-                      <div className="w-full md:w-1/2">
-                        <label className="block text-[11px] font-semibold text-slate-400 mb-1 uppercase">
-                          Evidence Type
-                        </label>
-                        <select
-                          value={newEvidence.evidence_type}
-                          onChange={e => setNewEvidence({ ...newEvidence, evidence_type: e.target.value })}
-                          className="w-full px-3 py-1.5 rounded-lg text-xs text-white outline-none"
-                          style={{ background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(51,65,85,0.7)' }}
+                    {/* Uploaded Digital Files List */}
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                        Uploaded Digital Media ({digitalEvidenceList.length})
+                      </h4>
+
+                      {fetchingDigitalEvidence && (
+                        <div className="p-4 text-center text-xs text-slate-500">Loading digital evidence files...</div>
+                      )}
+
+                      {!fetchingDigitalEvidence && digitalEvidenceList.length === 0 && (
+                        <div className="glass rounded-xl p-4 text-center text-xs text-slate-500">
+                          No digital evidence files uploaded for this case yet. Use the upload box above.
+                        </div>
+                      )}
+
+                      {digitalEvidenceList.map(item => (
+                        <div
+                          key={item.id}
+                          className="glass rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 border border-slate-800"
                         >
-                          <option value="Physical">Physical</option>
-                          <option value="Digital">Digital</option>
-                          <option value="Testimonial">Testimonial</option>
-                          <option value="Document">Document</option>
-                        </select>
-                      </div>
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <FileCode size={14} className="text-blue-400" />
+                              <span className="text-xs font-bold text-white font-mono">{item.original_filename}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-blue-500/20 text-blue-400">
+                                {item.category}
+                              </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-md font-mono bg-slate-800 text-slate-300">
+                                {formatBytes(item.file_size_bytes)}
+                              </span>
+                              {item.is_sensitive && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-md font-bold bg-amber-500/20 text-amber-400 flex items-center gap-1">
+                                  <ShieldAlert size={10} /> Sensitive
+                                </span>
+                              )}
+                            </div>
 
-                      <button
-                        type="submit"
-                        disabled={evidenceLoading}
-                        className="w-full md:w-auto px-5 py-2 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-50 self-end"
-                        style={{
-                          background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)',
-                          boxShadow: '0 4px 16px rgba(59,130,246,0.3)'
-                        }}
-                      >
-                        {evidenceLoading ? 'Submitting...' : 'Add Evidence'}
-                      </button>
+                            {item.description && (
+                              <p className="text-xs text-slate-300">{item.description}</p>
+                            )}
+
+                            {item.hash_sha256 && (
+                              <div className="flex items-center gap-1 text-[10px] font-mono text-slate-500 bg-slate-950/60 px-2 py-1 rounded border border-slate-900 w-fit max-w-full overflow-hidden text-ellipsis">
+                                <Hash size={10} className="text-blue-400 shrink-0" />
+                                <span className="truncate">SHA-256: {item.hash_sha256}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="shrink-0 flex items-center justify-end gap-3 text-[11px] text-slate-500">
+                            <span>Uploaded {new Date(item.uploaded_at || Date.now()).toLocaleDateString()}</span>
+                            <button
+                              onClick={() => handleDeleteDigitalEvidence(item.id)}
+                              title="Delete file"
+                              className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-all border border-red-500/20"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-
-                    {evidenceError && (
-                      <p className="text-xs text-red-400 mt-2">{evidenceError}</p>
-                    )}
-                  </form>
-                </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -715,3 +988,4 @@ export default function CasesPanel() {
     </div>
   )
 }
+

@@ -86,6 +86,11 @@ async def login(data: LoginRequest, session: Session = Depends(get_session)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid badge number or password"
         )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated. Contact the System Administrator."
+        )
     
     token = create_access_token(data={"sub": user.badge_number})
     
@@ -97,7 +102,10 @@ async def login(data: LoginRequest, session: Session = Depends(get_session)):
             "badge_number": user.badge_number,
             "name": user.name,
             "role": user.role,
-            "station_id": user.station_id
+            "station_id": user.station_id,
+            "is_admin": user.is_admin,
+            "is_active": user.is_active,
+            "department": user.department,
         }
     }
 

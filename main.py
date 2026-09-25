@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import create_db_and_tables
 from routes import router as api_router
+from admin_routes import admin_router, personnel_router, suspect_router, digital_evidence_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -13,7 +14,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Sentinel Patrol Backend",
     description="Backend API for Sentinel Patrol application",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -28,7 +29,11 @@ app.add_middleware(
 
 # Register API routes
 app.include_router(api_router)
+app.include_router(admin_router)
+app.include_router(personnel_router)
+app.include_router(suspect_router)
+app.include_router(digital_evidence_router)
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "2.0.0"}

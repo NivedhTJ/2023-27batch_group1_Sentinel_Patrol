@@ -162,9 +162,81 @@ def test_endpoint_rbac_permissions():
     assert res.status_code == 201, res.text
     assert res.json()["title"] == "Sub-Inspector Case"
 
-    print("ALL RBAC TESTS PASSED SUCCESSFULLY!")
+
+def test_admin_module_permissions():
+    """Verify system administrator RBAC: non-admin blocked (403), admin allowed (200), user management & audit logging."""
+    with Session(engine) as session:
+        # Create non-admin SP user and Admin user
+        sp_user = User(
+            badge_number="SP-999",
+            name="Superintendent Police",
+            password_hash=get_password_hash("password123"),
+            role="Superintendent of Police",
+            is_admin=False
+        )
+        admin_user = User(
+            badge_number="ADM-001",
+            name="System Admin",
+            password_hash=get_password_hash("admin123"),
+            role="Constable", # Operational rank does not grant admin access
+            is_admin=True
+        )
+        session.add(sp_user)
+        session.add(admin_user)
+        session.commit()
+
+    sp_token = create_access_token(data={"sub": "SP-999"})
+    admin_token = create_access_token(data={"sub": "ADM-001"})
+
+    # 1. Non-admin SP accessing admin route -> 403 Forbidden
+    res = client.get("/api/admin/users", headers={"Authorization": f"Bearer {sp_token}"})
+    assert res.status_code == 403, f"Expected 403 for non-admin SP, got {res.status_code}"
+    assert "System Administrator access required" in res.json()["detail"]
+
+    # 2. Admin user accessing admin route -> 200 OK
+    res = client.get("/api/admin/users", headers={"Authorization": f"Bearer {admin_token}"})
+    assert res.status_code == 200, f"Expected 200 for admin, got {res.status_code}"
+
+    # 3. Admin user creating a new user account -> 201 Created
+    res = client.post(
+        "/api/admin/users",
+        json={
+            "badge_number": "NEW-001",
+            "name": "New Officer",
+            "password": "SecurePassword123!",
+            "role": "Constable",
+            "is_admin": False
+        },
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res.status_code == 201, f"Expected 201 Created, got {res.status_code}: {res.text}"
+    new_user_id = res.json()["id"]
+
+    # 4. Admin toggling activation -> 200 OK
+    res = client.patch(
+        f"/api/admin/users/{new_user_id}/activation",
+        json={"is_active": False},
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert res.status_code == 200
+    assert res.json()["is_active"] is False
+
+    # 5. Check audit logs -> 200 OK
+    res = client.get("/api/admin/audit-logs", headers={"Authorization": f"Bearer {admin_token}"})
+    assert res.status_code == 200
+    logs = res.json()
+    assert len(logs) >= 2
+
+    # 6. Check system stats -> 200 OK
+    res = client.get("/api/admin/stats", headers={"Authorization": f"Bearer {admin_token}"})
+    assert res.status_code == 200
+    assert "total_users" in res.json()
+
+    print("ALL ADMIN MODULE TESTS PASSED SUCCESSFULLY!")
 
 if __name__ == "__main__":
     test_rank_levels_ordering()
     test_oversight_access_dependency()
     test_endpoint_rbac_permissions()
+    test_admin_module_permissions()
+

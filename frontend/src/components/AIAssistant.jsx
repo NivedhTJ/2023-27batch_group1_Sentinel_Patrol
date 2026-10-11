@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bot, User, Send, RefreshCw, Database, AlertCircle, Sparkles, FileText } from 'lucide-react'
+import { Bot, User, Send, RefreshCw, Database, AlertCircle, Sparkles, FileText, Cpu, TrendingUp } from 'lucide-react'
 import api from '../api'
 
 function ChatMessage({ msg }) {
@@ -80,6 +80,56 @@ function ChatMessage({ msg }) {
             ))}
           </div>
         )}
+
+        {/* ML Prediction SHAP breakdown card */}
+        {msg.isPrediction && msg.prediction && (
+          <div className="rounded-xl overflow-hidden animate-fade-in"
+               style={{ border: '1px solid rgba(59,130,246,0.3)', background: 'rgba(10,15,30,0.9)' }}>
+            {/* Risk header */}
+            <div className="flex items-center justify-between px-3 py-2"
+                 style={{
+                   borderBottom: '1px solid rgba(51,65,85,0.4)',
+                   background: 'rgba(29,78,216,0.15)',
+                 }}>
+              <div className="flex items-center gap-2">
+                <TrendingUp size={12} className="text-blue-400" />
+                <span className="text-[10px] font-bold text-blue-300 tracking-widest uppercase">SHAP Risk Factors</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-500">
+                {msg.prediction.district}
+              </span>
+            </div>
+            {/* SHAP effects table */}
+            <div className="p-3 space-y-1.5">
+              {msg.prediction.shap_effects?.map((f, i) => {
+                const barW = Math.min(Math.abs(f.shap_effect) * 400, 100)
+                const isPos = f.direction === 'increases_risk'
+                return (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-[9px] font-mono text-slate-500 truncate">
+                      {f.feature.replace(/_/g, ' ')}
+                    </span>
+                    <div className="flex-1 h-1.5 rounded-full overflow-hidden"
+                         style={{ background: 'rgba(51,65,85,0.3)' }}>
+                      <div className="h-full rounded-full transition-all"
+                           style={{
+                             width: `${barW}%`,
+                             background: isPos
+                               ? 'linear-gradient(90deg,#f87171,#ef4444)'
+                               : 'linear-gradient(90deg,#34d399,#10b981)',
+                           }} />
+                    </div>
+                    <span className="w-14 shrink-0 text-right text-[9px] font-mono"
+                          style={{ color: isPos ? '#f87171' : '#34d399' }}>
+                      {f.shap_effect > 0 ? '+' : ''}{f.shap_effect.toFixed(3)}
+                    </span>
+                    <span className="w-20 shrink-0 text-[8px] text-slate-600 truncate">{f.value}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -98,6 +148,7 @@ export default function AIAssistant() {
   const [syncMsg, setSyncMsg] = useState('')
   const [error, setError]     = useState('')
   const bottomRef             = useRef(null)
+  const lastPredictionRef     = useRef(null)  // tracks latest /predict result for /explain
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -112,6 +163,50 @@ export default function AIAssistant() {
     setMessages(prev => [...prev, { role: 'user', content: question }])
     setMessages(prev => [...prev, { role: 'loading', content: '' }])
 
+    // Slash command detection: route /predict, /explain, /help to /api/ai/command
+    const isSlashCommand = question.startsWith('/') || /^(predict|explain|help)\b/i.test(question)
+
+    if (isSlashCommand) {
+      try {
+        const res = await api.post('/api/ai/command', {
+          command: question,
+          last_prediction: lastPredictionRef.current,
+        })
+        const { type, briefing, prediction } = res.data
+
+        // Save the latest prediction for future /explain calls
+        if (type === 'prediction' && prediction) {
+          lastPredictionRef.current = prediction
+        }
+
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = {
+            role: 'assistant',
+            content: briefing || 'No response generated.',
+            sources: [],
+            isPrediction: (type === 'prediction' || type === 'explanation') && !!prediction,
+            prediction: prediction || null,
+          }
+          return copy
+        })
+      } catch (err) {
+        const detail = err?.response?.data?.detail || 'ML command failed. Ensure the backend is running.'
+        setMessages(prev => {
+          const copy = [...prev]
+          copy[copy.length - 1] = {
+            role: 'assistant',
+            content: `Error: ${detail}`,
+            sources: [],
+          }
+          return copy
+        })
+        setError(detail)
+      }
+      return
+    }
+
+    // Standard Ollama RAG query
     try {
       const res = await api.post('/api/ai/query', { question })
       const { answer, retrieved_incidents } = res.data
@@ -171,7 +266,7 @@ export default function AIAssistant() {
           </div>
           <div>
             <h2 className="text-sm font-bold text-white">Sentinel AI Assistant</h2>
-            <p className="text-xs text-slate-500">RAG · ChromaDB · Ollama LLM</p>
+            <p className="text-xs text-slate-500">RAG · ChromaDB · Ollama LLM · XGBoost SHAP ML</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -217,7 +312,7 @@ export default function AIAssistant() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about incidents, patterns, districts… (Enter to send)"
+          placeholder="Ask about incidents… or type /predict Ernakulam, /explain, /help"
           rows={2}
           disabled={isLoading}
           className="flex-1 resize-none text-sm text-white placeholder-slate-600 outline-none bg-transparent leading-relaxed disabled:opacity-50"
@@ -238,7 +333,7 @@ export default function AIAssistant() {
 
       {/* Footer hint */}
       <p className="text-center text-[10px] text-slate-700 pb-1">
-        Shift+Enter for new line · Powered by local Ollama + ChromaDB vector search
+        Shift+Enter for new line · <span className="text-blue-800">ML commands: /predict &lt;district&gt; · /explain · /help</span>
       </p>
     </div>
   )

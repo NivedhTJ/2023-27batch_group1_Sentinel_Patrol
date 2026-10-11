@@ -10,3 +10,7 @@ python-multipart
 httpx
 chromadb
 pytest
+xgboost
+shap
+scikit-learn
+numpy

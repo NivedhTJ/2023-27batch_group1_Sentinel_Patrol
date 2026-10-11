@@ -10,6 +10,7 @@ from database import get_session
 from models import User, Incident, Case, Evidence
 from auth import get_current_user, verify_password, create_access_token, require_min_rank
 from ai_engine import collection, index_incidents_to_vectorstore, query_local_llm
+from ml_engine import predict_risk, generate_tactical_briefing, handle_slash_command, KERALA_DISTRICTS
 
 router = APIRouter()
 logger = logging.getLogger("sentinel_patrol.routes")
@@ -50,6 +51,16 @@ class EvidenceCreate(BaseModel):
 
 class AIQueryRequest(BaseModel):
     question: str
+
+class SHAPPredictRequest(BaseModel):
+    district: str
+    hour: Optional[int] = None           # defaults to current IST hour
+    day_of_week: Optional[int] = None    # defaults to current IST weekday
+    weather_risk_index: float = 0.3      # 0.0 (clear) - 1.0 (severe)
+
+class SlashCommandRequest(BaseModel):
+    command: str                          # e.g. "/predict Ernakulam 22 5 0.4"
+    last_prediction: Optional[dict] = None  # previous /predict result, used by /explain
 
 # --- WebSocket Connection Manager ---
 class ConnectionManager:
@@ -435,7 +446,7 @@ async def query_ai(
     except (httpx.ConnectError, httpx.HTTPError, httpx.TimeoutException) as e:
         logger.error(f"Ollama connection error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_533_SERVICE_UNAVAILABLE if hasattr(e, 'status_code') and getattr(e, 'status_code') == 503 else status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Ollama service unavailable. Please run 'ollama serve' on your host machine."
         )
     except Exception as e:
@@ -449,3 +460,104 @@ async def query_ai(
         "answer": answer,
         "retrieved_incidents": retrieved_incidents
     }
+
+
+# --- SHAP Crime Risk Prediction Endpoint ---
+@router.post("/api/ai/predict-with-shap")
+async def predict_crime_risk_with_shap(
+    data: SHAPPredictRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Run an XGBoost + SHAP prediction for a given Kerala district and time.
+
+    Returns:
+      - risk_probability_pct   : overall risk probability as a percentage.
+      - risk_level             : categorical tier (LOW/MODERATE/HIGH/CRITICAL).
+      - base_risk_score        : model intercept (log-odds space).
+      - shap_effects           : per-feature SHAP contribution list, sorted by
+                                 absolute magnitude (most influential first).
+      - tactical_briefing      : plain-text professional briefing for officers.
+    """
+    from datetime import datetime as _dt
+
+    now_ist = _dt.now()
+    hour        = data.hour        if data.hour        is not None else now_ist.hour
+    day_of_week = data.day_of_week if data.day_of_week is not None else now_ist.weekday()
+
+    # Validate district name
+    canonical_districts_lower = [d.lower() for d in KERALA_DISTRICTS]
+    if data.district.strip().lower() not in canonical_districts_lower:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Unknown district '{data.district}'. "
+                f"Valid options: {', '.join(KERALA_DISTRICTS)}"
+            ),
+        )
+
+    try:
+        result = predict_risk(
+            district=data.district,
+            hour=hour,
+            day_of_week=day_of_week,
+            weather_risk_index=data.weather_risk_index,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    except RuntimeError as exc:
+        logger.error(f"ML engine runtime error: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        logger.error(f"Unexpected ML prediction error: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during risk prediction.",
+        )
+
+    briefing = generate_tactical_briefing(data.district, result)
+    return {
+        **result,
+        "tactical_briefing": briefing,
+    }
+
+
+# --- Slash-Command Handler for AI Chat Terminal ---
+@router.post("/api/ai/command")
+async def ai_slash_command(
+    data: SlashCommandRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Conversational command router for the AI chat terminal.
+    Supports /predict <district> [hour] [day] [weather], /explain, and /help.
+
+    Returns:
+      - type     : "prediction" | "explanation" | "help" | "error"
+      - briefing : formatted plain-text response for the chat UI.
+      - prediction : raw ML result dict (None for non-prediction commands).
+      - error    : error message string (None on success).
+    """
+    if not data.command.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Command cannot be empty. Try /predict, /explain, or /help.",
+        )
+
+    try:
+        result = handle_slash_command(data.command, last_prediction=data.last_prediction)
+    except Exception as exc:
+        logger.error(f"Slash command handler error: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process command.",
+        )
+
+    # Return 200 even for "error" type — the chat UI handles the error display
+    return result

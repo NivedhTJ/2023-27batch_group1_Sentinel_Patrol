@@ -482,14 +482,6 @@ function buildHotspots(incidents) {
 
 // ── Tile Providers (HD alternatives with 0 blur & 0 API key) ──
 const TILE_PROVIDERS = {
-  cartoDark: {
-    id: 'cartoDark',
-    name: 'CARTO Dark Matter',
-    url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
-    subdomains: ['a', 'b', 'c', 'd'],
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    maxZoom: 19
-  },
   osm: {
     id: 'osm',
     name: 'OpenStreetMap (HD Street)',
@@ -511,9 +503,9 @@ const TILE_PROVIDERS = {
 function MapPanel({ incidents }) {
   const { officers, wsStatus, sendLocation } = usePatrolWebSocket('officer_101')
   const [mapMode, setMapMode] = useState('markers')  // 'markers' | 'heatmap'
-  const [tileKey, setTileKey] = useState('cartoDark') // default to fastly CARTO Dark Matter
+  const [tileKey, setTileKey] = useState('osm') // default to OpenStreetMap
   const hotspots = mapMode === 'heatmap' ? buildHotspots(incidents) : []
-  const activeTile = TILE_PROVIDERS[tileKey] || TILE_PROVIDERS.cartoDark
+  const activeTile = TILE_PROVIDERS[tileKey] || TILE_PROVIDERS.osm
 
   return (
     <div

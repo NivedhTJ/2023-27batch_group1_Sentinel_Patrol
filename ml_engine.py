@@ -63,6 +63,29 @@ FEATURE_NAMES: list[str] = [
 try:
     from xgboost import XGBClassifier          # type: ignore
     import shap                                # type: ignore
+
+    # --- WORKAROUND FOR SHAP COMPATIBILITY WITH XGBOOST 3.0+ ---
+    # XGBoost 3.0+ serializes learner_model_param["base_score"] as a bracketed string like "[3.5375E-1]",
+    # which causes float(learner_model_param["base_score"]) in SHAP's XGBTreeModelLoader to raise ValueError.
+    # We intercept decode_ubjson_buffer to strip the brackets and prevent server crashes.
+    try:
+        import shap.explainers._tree as _shap_tree
+        _orig_decode_ubjson = _shap_tree.decode_ubjson_buffer
+
+        def _safe_decode_ubjson(fd):
+            res = _orig_decode_ubjson(fd)
+            try:
+                bs = res["learner"]["learner_model_param"]["base_score"]
+                if isinstance(bs, str) and bs.startswith("["):
+                    res["learner"]["learner_model_param"]["base_score"] = bs.strip("[]")
+            except Exception:
+                pass
+            return res
+
+        _shap_tree.decode_ubjson_buffer = _safe_decode_ubjson
+    except Exception as _patch_err:
+        logger.warning(f"Could not apply SHAP/XGBoost 3.0+ compatibility patch: {_patch_err}")
+
     _ML_AVAILABLE = True
     _ML_IMPORT_ERROR = ""
 except ImportError as _ml_err:

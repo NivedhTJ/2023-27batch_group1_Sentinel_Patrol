@@ -319,7 +319,7 @@ def seed_data():
         if len(existing_suspects) < 3:
             suspects_data = [
                 {
-                    "full_name": "Faisal 'Blade' Rahman",
+                    "full_name": "Faisal Rahman",
                     "alias": "Blade Faisal",
                     "date_of_birth": datetime(1994, 6, 15, tzinfo=timezone.utc),
                     "gender": "Male",
@@ -355,7 +355,7 @@ def seed_data():
                     "linked_case_ids": str(all_cases[1].id) if len(all_cases) > 1 else str(all_cases[0].id)
                 },
                 {
-                    "full_name": "Ramesh 'Thunder' Varma",
+                    "full_name": "Ramesh Varma",
                     "alias": "Thunder Ramesh",
                     "date_of_birth": datetime(1989, 4, 22, tzinfo=timezone.utc),
                     "gender": "Male",
